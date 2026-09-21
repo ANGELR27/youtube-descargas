@@ -1,0 +1,12 @@
+# Binarios pesados (Iniciar.bat los descarga solo)
+bin/
+
+# Dependencias
+node_modules/
+
+# Datos personales del usuario (historial, config, temporales)
+data/
+
+# Sistema
+*.log
+Thumbs.db

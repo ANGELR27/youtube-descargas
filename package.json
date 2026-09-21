@@ -1,0 +1,12 @@
+{
+  "name": "youtube-descargas",
+  "version": "1.0.0",
+  "description": "Descarga de videos de YouTube pegando el link (MP4 y MP3) para uso personal",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  }
+}

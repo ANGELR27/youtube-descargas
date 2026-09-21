@@ -1,0 +1,1328 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Descargas YouTube</title>
+<style>
+  :root {
+    --texto: #f2f3f7;
+    --texto-suave: rgba(242, 243, 247, .65);
+    --vidrio: rgba(214, 234, 255, .10);
+    --vidrio-borde: rgba(233, 245, 255, .30);
+    --hielo-brillo: rgba(255, 255, 255, .35);
+    --hielo-sombra: rgba(255, 255, 255, .08);
+    --rojo: #ff3d3d;
+    --verde: #34d97b;
+    --naranja: #ffb347;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    background: #0c0d12;
+    color: var(--texto);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    user-select: none;
+    animation: aparecerPagina .6s ease both;
+  }
+  @keyframes aparecerPagina { from { opacity: 0; } to { opacity: 1; } }
+
+  /* ---- Fondos de la app (rotan al azar; tono oscuro consistente) ---- */
+  .fondo-app {
+    position: fixed; inset: -8%;
+    background-size: cover;
+    background-position: center;
+    filter: blur(16px) brightness(.5) saturate(1.15);
+    transform: scale(1.15);
+    opacity: 0;
+    transition: opacity 1.4s ease;
+    z-index: 0;
+    pointer-events: none;
+  }
+  .fondo-app.visible { opacity: 1; }
+
+  /* ---- Fondo ambiental con la miniatura de la card activa ---- */
+  #ambiente {
+    position: fixed; inset: -8%;
+    background-size: cover;
+    background-position: center;
+    filter: blur(70px) brightness(.32) saturate(1.25);
+    transform: scale(1.25);
+    transition: background-image .8s ease;
+    z-index: 0;
+  }
+  #ambiente::after {
+    content: '';
+    position: absolute; inset: 0;
+    background: radial-gradient(120% 90% at 50% 0%, rgba(12,13,18,0) 40%, rgba(12,13,18,.75) 100%);
+  }
+
+  /* ---- Barra superior (pegar link) ---- */
+  .barra-superior {
+    position: relative; z-index: 20;
+    display: flex; justify-content: center;
+    padding: 22px 16px 6px;
+  }
+  .pill-link {
+    display: flex; align-items: center; gap: 8px;
+    background: linear-gradient(120deg, rgba(214,234,255,.16), rgba(214,234,255,.05) 55%, rgba(214,234,255,.12));
+    border: 1px solid var(--vidrio-borde);
+    backdrop-filter: blur(24px) saturate(1.6);
+    -webkit-backdrop-filter: blur(24px) saturate(1.6);
+    border-radius: 99px;
+    padding: 7px 7px 7px 20px;
+    width: min(620px, 92vw);
+    box-shadow: inset 0 1px 0 var(--hielo-brillo), inset 0 -1px 0 var(--hielo-sombra), 0 10px 34px rgba(0,0,0,.35);
+  }
+  .pill-link .logo { color: var(--rojo); font-size: 17px; margin-right: 2px; }
+  #link {
+    flex: 1;
+    background: transparent;
+    border: none; outline: none;
+    color: var(--texto);
+    font-size: 14.5px;
+    min-width: 0;
+  }
+  #link::placeholder { color: var(--texto-suave); }
+  #link:focus { color: var(--texto); }
+  .pill-link:has(#link:focus) { border-color: rgba(255, 61, 61, .55); box-shadow: 0 0 0 3px rgba(255, 61, 61, .15), 0 10px 34px rgba(0,0,0,.35); }
+  #btnAnalizar {
+    border: none; cursor: pointer;
+    background: var(--rojo);
+    color: #fff;
+    font-weight: 600; font-size: 14px;
+    padding: 10px 20px;
+    border-radius: 99px;
+    transition: filter .15s;
+    white-space: nowrap;
+  }
+  #btnAnalizar:hover { filter: brightness(1.15); }
+  #btnAnalizar:disabled { opacity: .55; cursor: wait; }
+
+  /* ---- Toolbar lateral ---- */
+  .toolbar {
+    position: fixed; left: 18px; top: 50%; transform: translateY(-50%);
+    z-index: 20;
+    display: flex; flex-direction: column; gap: 6px;
+    background: linear-gradient(160deg, rgba(214,234,255,.16), rgba(214,234,255,.06));
+    border: 1px solid var(--vidrio-borde);
+    backdrop-filter: blur(24px) saturate(1.6);
+    -webkit-backdrop-filter: blur(24px) saturate(1.6);
+    border-radius: 99px;
+    padding: 8px 6px;
+    box-shadow: inset 0 1px 0 var(--hielo-brillo), inset 0 -1px 0 var(--hielo-sombra), 0 10px 34px rgba(0,0,0,.35);
+  }
+  .toolbar button {
+    width: 40px; height: 40px;
+    border: none; border-radius: 50%;
+    background: transparent;
+    color: var(--texto);
+    font-size: 17px;
+    cursor: pointer;
+    transition: background .15s;
+  }
+  .toolbar button:hover { background: rgba(255,255,255,.12); }
+
+  /* ---- Escenario del carrusel ---- */
+  .escenario {
+    position: relative; z-index: 10;
+    flex: 1;
+    perspective: 1500px;
+    perspective-origin: 50% 42%;
+    min-height: 0;
+  }
+  /* reflejo/glow del piso bajo la card central */
+  .escenario::before {
+    content: '';
+    position: absolute;
+    left: 50%; top: 50%;
+    width: min(560px, 90vw); height: 120px;
+    transform: translate(-50%, min(270px, 34vh));
+    background: radial-gradient(50% 100% at 50% 0%, rgba(255, 255, 255, .10), transparent 70%);
+    filter: blur(6px);
+    pointer-events: none;
+    z-index: 1;
+  }
+  #carrusel { position: absolute; inset: 0; transform-style: preserve-3d; }
+
+  .card {
+    position: absolute;
+    top: 50%; left: 50%;
+    width: min(400px, 82vw);
+    height: min(580px, calc(100vh - 220px));
+    min-height: 420px;
+    border-radius: 26px;
+    overflow: hidden;
+    background: linear-gradient(150deg, rgba(214,234,255,.14), rgba(160,190,255,.06) 40%, rgba(255,255,255,.03));
+    border: 1px solid rgba(235,245,255,.32);
+    box-shadow: inset 0 1px 0 var(--hielo-brillo), inset 0 -1px 0 var(--hielo-sombra), 0 30px 70px rgba(0,0,0,.55);
+    transform-style: preserve-3d;
+    transition: transform .55s cubic-bezier(.22,.8,.3,1), opacity .45s ease, filter .45s ease;
+    will-change: transform;
+    cursor: pointer;
+    animation: entrarCard .5s cubic-bezier(.22,.8,.3,1) both;
+  }
+  /* reflejo diagonal del vidrio sobre la miniatura */
+  .card::after {
+    content: '';
+    position: absolute; inset: 0;
+    background: linear-gradient(115deg, transparent 40%, rgba(255,255,255,.09) 50%, transparent 60%);
+    pointer-events: none;
+    z-index: 1;
+  }
+  @keyframes entrarCard {
+    from { opacity: 0; transform: translate(-50%, -46%) scale(.85); }
+    to { opacity: 1; }
+  }
+  /* las cards laterales reaccionan al pasar el mouse */
+  .card:not(.activa):hover { filter: brightness(.8) !important; }
+  .card img.fondo {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+    object-fit: cover;
+    transition: transform .55s ease;
+  }
+  .card .velo {
+    position: absolute; inset: 0;
+    background: linear-gradient(180deg, rgba(190,220,255,.18) 0%, rgba(190,220,255,.05) 30%, rgba(10,14,22,.55) 62%, rgba(8,12,20,.90) 100%);
+  }
+  .card.activa img.fondo { transform: scale(1.04); }
+
+  /* fila superior de la card */
+  .card .fila-superior {
+    position: absolute; top: 0; left: 0; right: 0;
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 14px 16px;
+    z-index: 2;
+  }
+  .chip {
+    font-size: 12px; font-weight: 600;
+    padding: 6px 13px;
+    border-radius: 99px;
+    background: rgba(214,234,255,.16);
+    border: 1px solid rgba(235,245,255,.35);
+    backdrop-filter: blur(14px) saturate(1.5);
+    -webkit-backdrop-filter: blur(14px) saturate(1.5);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.25);
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  .chip.nuevo { background: rgba(255,61,61,.28); border-color: rgba(255,61,61,.45); }
+  .chip.listo { background: rgba(52,217,123,.22); border-color: rgba(52,217,123,.4); }
+  .chip.en_cola { background: rgba(120,160,255,.18); border-color: rgba(120,160,255,.4); }
+  .chip.error, .chip.cancelado { background: rgba(255,80,80,.2); border-color: rgba(255,80,80,.4); }
+  .chip.descargando { background: rgba(255,179,71,.22); border-color: rgba(255,179,71,.45); }
+  .contador { color: var(--texto-suave); font-size: 12.5px; opacity: 0; transition: opacity .4s; }
+  .card.activa .contador { opacity: 1; }
+
+  /* contenido inferior de la card — panel de vidrio esmerilado */
+  .card .contenido {
+    position: absolute; left: 0; right: 0; bottom: 0;
+    padding: 16px 18px 18px;
+    display: flex; flex-direction: column; gap: 10px;
+    max-height: 68%;
+    overflow: hidden;
+    z-index: 2;
+    background: linear-gradient(180deg, rgba(190,220,255,.10), rgba(190,220,255,.18));
+    backdrop-filter: blur(18px) saturate(1.5);
+    -webkit-backdrop-filter: blur(18px) saturate(1.5);
+    border-top: 1px solid rgba(235,245,255,.28);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.22);
+  }
+  .card .titulo {
+    font-size: 21px; font-weight: 700; line-height: 1.25;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .card .subtitulo { font-size: 13px; color: var(--texto-suave); }
+  .card .descripcion {
+    font-size: 13px; line-height: 1.5; color: var(--texto-suave);
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .card .descripcion.larga { -webkit-line-clamp: 3; }
+
+  /* controles dentro de la card (video analizado) */
+  .selector-formato { display: flex; gap: 8px; }
+  .opcion {
+    flex: 1; text-align: center;
+    padding: 9px 6px;
+    border-radius: 12px;
+    border: 1px solid rgba(235,245,255,.25);
+    background: rgba(214,234,255,.10);
+    cursor: pointer; user-select: none;
+    font-size: 13px; font-weight: 600; color: var(--texto-suave);
+    transition: all .15s;
+  }
+  .opcion.activa { border-color: var(--rojo); color: #fff; background: rgba(255,61,61,.25); }
+  select {
+    width: 100%;
+    background: rgba(214,234,255,.10);
+    border: 1px solid rgba(235,245,255,.25);
+    border-radius: 12px;
+    color: var(--texto);
+    padding: 10px 12px;
+    font-size: 13.5px;
+    outline: none;
+    backdrop-filter: blur(10px) saturate(1.4);
+    -webkit-backdrop-filter: blur(10px) saturate(1.4);
+  }
+  select option { background: #14161f; color: var(--texto); }
+  .btn-primario {
+    border: none; cursor: pointer;
+    background: var(--rojo); color: #fff;
+    font-weight: 700; font-size: 15px;
+    padding: 13px; border-radius: 14px;
+    transition: filter .15s;
+  }
+  .btn-primario:hover { filter: brightness(1.15); }
+  .btn-vidrio {
+    border: 1px solid rgba(235,245,255,.28);
+    background: linear-gradient(160deg, rgba(214,234,255,.16), rgba(214,234,255,.07));
+    color: var(--texto);
+    font-weight: 600; font-size: 13.5px;
+    padding: 11px; border-radius: 12px;
+    cursor: pointer;
+    backdrop-filter: blur(12px) saturate(1.4);
+    -webkit-backdrop-filter: blur(12px) saturate(1.4);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.22);
+    transition: background .15s;
+  }
+  .btn-vidrio:hover { background: rgba(255,255,255,.18); }
+  .btn-vidrio:disabled, .btn-primario:disabled { opacity: .5; cursor: not-allowed; }
+
+  /* progreso dentro de la card */
+  .progreso-zona { display: flex; flex-direction: column; gap: 9px; }
+  .fila-progreso { display: flex; justify-content: space-between; font-size: 13px; color: var(--texto-suave); }
+  .fila-progreso b { color: var(--texto); }
+  .barra { height: 8px; border-radius: 99px; background: rgba(214,234,255,.15); overflow: hidden; box-shadow: inset 0 1px 2px rgba(0,0,0,.35), inset 0 -1px 0 rgba(255,255,255,.12); }
+  .barra > div {
+    height: 100%; width: 0%;
+    border-radius: 99px;
+    background: linear-gradient(90deg, var(--rojo), #ff9159);
+    transition: width .5s ease;
+  }
+  .texto-error { font-size: 13px; color: #ff9c9c; line-height: 1.45; }
+
+  .girando {
+    display: inline-block; width: 13px; height: 13px;
+    border: 2px solid rgba(255,255,255,.3); border-top-color: #fff;
+    border-radius: 50%;
+    animation: girar .8s linear infinite;
+    vertical-align: -2px;
+  }
+  @keyframes girar { to { transform: rotate(360deg); } }
+
+  /* ---- Botones dobles en cards listas ---- */
+  .botones-duo { display: flex; gap: 8px; }
+  .botones-duo .btn-vidrio { flex: 1; padding: 10px 6px; font-size: 12.5px; white-space: nowrap; }
+
+  /* ---- Modal del creador de clips ---- */
+  .modal-fondo {
+    position: fixed; inset: 0;
+    background: rgba(8, 12, 22, .45);
+    backdrop-filter: blur(14px) saturate(1.3) brightness(.85);
+    -webkit-backdrop-filter: blur(14px) saturate(1.3) brightness(.85);
+    z-index: 50;
+    display: none;
+    align-items: center;
+    justify-content: center;
+  }
+  .modal-fondo.visible { display: flex; animation: aparecerPagina .25s ease both; }
+  .modal {
+    width: min(460px, 92vw);
+    max-height: 86vh;
+    overflow-y: auto;
+    background:
+      linear-gradient(115deg, rgba(255,255,255,.12) 0%, rgba(255,255,255,.03) 30%, rgba(214,234,255,.10) 100%),
+      linear-gradient(rgba(15, 21, 33, .60), rgba(15, 21, 33, .60));
+    border: 1px solid rgba(233,245,255,.32);
+    backdrop-filter: blur(40px) saturate(1.6);
+    -webkit-backdrop-filter: blur(40px) saturate(1.6);
+    border-radius: 24px;
+    padding: 22px;
+    box-shadow: inset 0 1px 0 var(--hielo-brillo), inset 0 -1px 0 var(--hielo-sombra), 0 30px 80px rgba(0,0,0,.6);
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .modal::-webkit-scrollbar { width: 8px; }
+  .modal::-webkit-scrollbar-track { background: transparent; }
+  .modal::-webkit-scrollbar-thumb {
+    background: rgba(214,234,255,.25);
+    border-radius: 99px;
+  }
+  .modal::-webkit-scrollbar-thumb:hover { background: rgba(214,234,255,.4); }
+  .modal-cabecera { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+  .modal-titulo { font-size: 18px; font-weight: 700; }
+  .modal-sub { font-size: 13px; color: var(--texto-suave); margin-top: 3px; line-height: 1.4; }
+  .mc-nota {
+    font-size: 12px; line-height: 1.55; color: var(--texto-suave);
+    background: linear-gradient(160deg, rgba(214,234,255,.12), rgba(214,234,255,.05));
+    border: 1px solid rgba(235,245,255,.22);
+    border-radius: 12px;
+    padding: 10px 12px;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.18);
+  }
+  .mc-lista { display: flex; flex-direction: column; gap: 8px; }
+  .mc-item {
+    display: flex; align-items: center; gap: 12px;
+    background: rgba(255,255,255,.06);
+    border: 1px solid rgba(255,255,255,.12);
+    border-radius: 14px;
+    padding: 12px 14px;
+  }
+  .mc-item .num {
+    width: 34px; height: 34px; flex-shrink: 0;
+    border-radius: 50%;
+    background: var(--rojo);
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 14px;
+  }
+  .mc-item .info { flex: 1; min-width: 0; font-size: 12.5px; color: var(--texto-suave); line-height: 1.45; }
+  .mc-item .info b { color: var(--texto); font-size: 13.5px; display: block; margin-bottom: 2px; }
+  .texto-error-mc { font-size: 13px; color: #ff9c9c; line-height: 1.5; }
+
+  /* ---- Banco de temas de subtítulos ---- */
+  .temas-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .tema-chip {
+    border-radius: 14px;
+    border: 2px solid rgba(235,245,255,.18);
+    background: linear-gradient(160deg, rgba(214,234,255,.10), rgba(214,234,255,.04));
+    padding: 10px 6px 8px;
+    text-align: center;
+    cursor: pointer;
+    user-select: none;
+    transition: border-color .15s, background .15s;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.15);
+  }
+  .tema-chip:hover { background: rgba(214,234,255,.18); }
+  .tema-chip.activa { border-color: var(--rojo); background: rgba(255,61,61,.12); }
+  .tema-chip .muestra {
+    font-weight: 800; font-size: 19px; line-height: 1.2;
+    color: var(--tema-color);
+    text-shadow: 0 0 0 var(--tema-color), 1.5px 1.5px 0 #111;
+    letter-spacing: .5px;
+  }
+  .tema-chip .muestra span { color: var(--tema-activa); }
+  .tema-chip .nombre-tema { font-size: 10.5px; color: var(--texto-suave); margin-top: 5px; }
+
+  /* ---- Modos ---- */
+  .modos { display: flex; gap: 8px; }
+  .modos .btn-vidrio { flex: 1; padding: 12px 6px; font-size: 13.5px; }
+  .modos .btn-vidrio.primario-modo { border-color: var(--rojo); background: rgba(255,61,61,.18); }
+
+  /* ---- Propuestas de momentos ---- */
+  .propuestas { display: flex; flex-direction: column; gap: 10px; }
+  .propuesta {
+    background: linear-gradient(160deg, rgba(214,234,255,.12), rgba(214,234,255,.05));
+    border: 1px solid rgba(235,245,255,.22);
+    border-radius: 14px;
+    padding: 12px 14px;
+    display: flex; flex-direction: column; gap: 8px;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.18);
+  }
+  .propuesta.elegida { border-color: rgba(255,61,61,.6); background: rgba(255,61,61,.08); }
+  .propuesta .fila-prop { display: flex; gap: 10px; align-items: flex-start; }
+  .propuesta input[type="checkbox"] { width: 18px; height: 18px; margin-top: 2px; accent-color: var(--rojo); flex-shrink: 0; }
+  .propuesta .texto-prop { flex: 1; font-size: 12.5px; line-height: 1.5; color: var(--texto-suave); }
+  .propuesta .texto-prop b { color: var(--texto); font-size: 13px; display: block; margin-bottom: 2px; }
+  .propuesta input[type="range"] { width: 100%; accent-color: var(--rojo); }
+  .propuesta .marca { font-size: 11px; color: var(--texto-suave); display: flex; justify-content: space-between; }
+
+  /* ---- Resultados con vista previa ---- */
+  .clip-resultado {
+    background: linear-gradient(160deg, rgba(214,234,255,.12), rgba(214,234,255,.05));
+    border: 1px solid rgba(235,245,255,.22);
+    border-radius: 16px;
+    padding: 12px;
+    display: flex; flex-direction: column; gap: 10px;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.18);
+  }
+  .clip-resultado video {
+    width: 100%; max-height: 300px;
+    border-radius: 12px;
+    background: #000;
+    outline: none;
+  }
+  .clip-resultado .titulos { display: flex; flex-direction: column; gap: 6px; }
+  .titulo-sug {
+    display: flex; align-items: center; gap: 8px;
+    background: rgba(214,234,255,.10);
+    border: 1px solid rgba(235,245,255,.16);
+    border-radius: 10px;
+    padding: 8px 10px;
+    font-size: 12.5px; line-height: 1.4;
+  }
+  .titulo-sug span { flex: 1; }
+  .btn-copiar {
+    border: none; cursor: pointer; flex-shrink: 0;
+    background: rgba(214,234,255,.16);
+    border: 1px solid rgba(235,245,255,.2);
+    color: var(--texto);
+    border-radius: 8px;
+    padding: 5px 9px;
+    font-size: 12px;
+  }
+  .btn-copiar:hover { background: rgba(255,255,255,.22); }
+  .hashtags { font-size: 12.5px; color: #7ab7ff; line-height: 1.5; word-break: break-word; }
+
+  /* ---- Pill inferior ---- */
+  .zona-inferior {
+    position: relative; z-index: 20;
+    display: flex; flex-direction: column; align-items: center; gap: 12px;
+    padding: 8px 16px 20px;
+  }
+  .pill-info-video {
+    display: flex; align-items: center; gap: 14px;
+    background: linear-gradient(120deg, rgba(214,234,255,.16), rgba(214,234,255,.06) 55%, rgba(214,234,255,.12));
+    border: 1px solid var(--vidrio-borde);
+    backdrop-filter: blur(24px) saturate(1.6);
+    -webkit-backdrop-filter: blur(24px) saturate(1.6);
+    border-radius: 99px;
+    padding: 9px 12px;
+    width: min(480px, 92vw);
+    box-shadow: inset 0 1px 0 var(--hielo-brillo), inset 0 -1px 0 var(--hielo-sombra), 0 10px 34px rgba(0,0,0,.35);
+  }
+  .pill-info-video img {
+    width: 46px; height: 46px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 2px solid rgba(255,255,255,.25);
+    flex-shrink: 0;
+  }
+  .pill-texto { flex: 1; min-width: 0; }
+  #pillTitulo { font-size: 14.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #pillSubtitulo { font-size: 12px; color: var(--texto-suave); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .flecha {
+    width: 38px; height: 38px;
+    border: 1px solid rgba(235,245,255,.2);
+    border-radius: 50%;
+    background: rgba(214,234,255,.12);
+    color: var(--texto);
+    font-size: 19px; line-height: 1;
+    cursor: pointer;
+    flex-shrink: 0;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.2);
+    transition: background .15s;
+  }
+  .flecha:hover { background: rgba(214,234,255,.25); }
+
+  /* dots */
+  #puntos { display: flex; gap: 7px; align-items: center; min-height: 8px; }
+  #puntos .punto {
+    width: 7px; height: 7px; border-radius: 99px;
+    background: rgba(255,255,255,.28);
+    cursor: pointer;
+    transition: all .3s;
+  }
+  #puntos .punto.actual { width: 20px; background: #fff; }
+  #puntos .contador-texto { font-size: 12px; color: var(--texto-suave); }
+
+  .aviso-vacio {
+    position: absolute; top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    text-align: center; color: var(--texto-suave);
+    z-index: 5; font-size: 14.5px; line-height: 1.7;
+    pointer-events: none;
+  }
+  .aviso-vacio .grande { font-size: 42px; margin-bottom: 10px; }
+
+  @media (max-width: 700px) {
+    .toolbar { display: none; }
+    .card { height: min(560px, calc(100vh - 200px)); }
+  }
+</style>
+</head>
+<body>
+  <div id="fondoA" class="fondo-app"></div>
+  <div id="fondoB" class="fondo-app"></div>
+  <div id="ambiente"></div>
+
+  <!-- Pegar link -->
+  <div class="barra-superior">
+    <div class="pill-link">
+      <span class="logo">▶</span>
+      <input id="link" type="text" placeholder="Pega aquí el enlace del video de YouTube..." autofocus>
+      <button id="btnAnalizar">Analizar</button>
+    </div>
+  </div>
+
+  <!-- Acciones rápidas -->
+  <div class="toolbar">
+    <button id="tbCarpeta" title="Abrir carpeta Descargas">📂</button>
+    <button id="tbActualizar" title="Actualizar">⟳</button>
+  </div>
+
+  <!-- Carrusel 3D -->
+  <div class="escenario"><div id="carrusel"></div></div>
+
+  <!-- Pill inferior + dots -->
+  <div class="zona-inferior">
+    <div class="pill-info-video">
+      <button class="flecha" id="btnPrev">‹</button>
+      <img id="pillThumb" alt="" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'/%3E">
+      <div class="pill-texto">
+        <div id="pillTitulo">Descargas YouTube</div>
+        <div id="pillSubtitulo">Pega un enlace para empezar</div>
+      </div>
+      <button class="flecha" id="btnNext">›</button>
+    </div>
+    <div id="puntos"></div>
+  </div>
+
+  <!-- Modal del creador de clips -->
+  <div class="modal-fondo" id="modalClips">
+    <div class="modal">
+      <div class="modal-cabecera">
+        <div>
+          <div class="modal-titulo">✂ Creador de clips</div>
+          <div class="modal-sub" id="mcVideo"></div>
+        </div>
+        <button class="flecha" id="mcCerrar" title="Cerrar">✕</button>
+      </div>
+
+      <!-- Formulario: tema + duración + modo -->
+      <div id="mcForm" style="display:none; flex-direction:column; gap:14px;">
+        <div>
+          <label style="display:block; font-size:11px; color:var(--texto-suave); text-transform:uppercase; letter-spacing:.5px; margin-bottom:8px;">Tema de subtítulos</label>
+          <div class="temas-grid" id="temasGrid"></div>
+        </div>
+        <div class="opciones" style="margin-top:0;">
+          <div class="grupo">
+            <label>Duración del clip</label>
+            <select id="mcDur">
+              <option value="30">30 segundos</option>
+              <option value="45" selected>45 segundos</option>
+              <option value="60">60 segundos</option>
+            </select>
+          </div>
+          <div class="grupo">
+            <label>Cantidad</label>
+            <select id="mcCant">
+              <option value="1">1 clip</option>
+              <option value="2" selected>2 clips</option>
+              <option value="3">3 clips</option>
+            </select>
+          </div>
+        </div>
+        <div class="modos">
+          <button class="btn-vidrio primario-modo" id="mcAuto">✨  Automático</button>
+          <button class="btn-vidrio" id="mcManual">🎯  Yo elijo los momentos</button>
+        </div>
+        <div class="mc-nota" id="mcNota">
+          Transcripción local con IA (sin subir nada a internet). Detecta los momentos con más gancho y renderiza clips verticales <b>1080×1920</b> con subtítulos quemados, listos para Shorts/TikTok.
+        </div>
+      </div>
+
+      <!-- Progreso -->
+      <div id="mcProgreso" class="progreso-zona" style="display:none;">
+        <div class="fila-progreso"><span id="mcFase">…</span><b id="mcPct">0%</b></div>
+        <div class="barra"><div id="mcBarra" style="width:0%"></div></div>
+        <button class="btn-vidrio" id="mcCancelar">✕  Cancelar proceso</button>
+      </div>
+
+      <!-- Propuestas (modo manual) -->
+      <div id="mcPropuestas" style="display:none; flex-direction:column; gap:12px;">
+        <div class="mc-nota">Elige los momentos que quieras convertir en clips y ajusta su inicio si quieres.</div>
+        <div class="propuestas" id="listaPropuestas"></div>
+        <button class="btn-primario" id="mcRenderizar">🎬  Renderizar seleccionados</button>
+      </div>
+
+      <!-- Resultados -->
+      <div id="mcResultado" style="display:none; flex-direction:column; gap:12px;">
+        <div class="mc-lista" id="mcLista"></div>
+        <button class="btn-vidrio" id="mcAbrir">📂  Abrir carpeta de clips</button>
+        <button class="btn-vidrio" id="mcOtro">↺  Generar otros clips</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+  const $ = id => document.getElementById(id);
+  const carrusel = $('carrusel');
+  let items = [];          // [{tipo:'analisis'|'descarga'|'vacio', ...}]
+  let activo = 0;
+  let modo = 'video';
+  let sondeando = null;
+  let colaIds = [];        // ids pendientes en la cola, en orden
+  const nodos = new Map(); // clave de item -> elemento card
+
+  // ================= Analizar =================
+  $('btnAnalizar').addEventListener('click', analizar);
+  $('link').addEventListener('keydown', e => { if (e.key === 'Enter') analizar(); });
+
+  async function analizar() {
+    const url = $('link').value.trim();
+    if (!url) { $('link').focus(); return; }
+    const btn = $('btnAnalizar');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="girando"></span> Analizando';
+    try {
+      const r = await fetch('/api/analizar', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url })
+      });
+      const info = await r.json();
+      if (!r.ok) throw new Error(info.error || 'No se pudo analizar el video.');
+      if (info.esLive) throw new Error('Es una transmisión en vivo; espera a que termine.');
+      // El video analizado se convierte en la card frontal del carrusel
+      items = items.filter(i => i.tipo !== 'analisis' && i.tipo !== 'vacio');
+      items.unshift({ tipo: 'analisis', clave: 'a' + Date.now(), url, ...info });
+      activo = 0;
+      construirCards();
+      pintar();
+    } catch (e) {
+      alert(e.message);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Analizar';
+    }
+  }
+
+  // ================= Descargar =================
+  async function descargar(item) {
+    try {
+      const r = await fetch('/api/descargar', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          url: item.url, modo, calidad: item.calidadElegida || 'mejor',
+          titulo: item.titulo, canal: item.canal, duracion: item.duracion,
+          miniatura: item.miniatura, descripcion: item.descripcion
+        })
+      });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || 'No se pudo iniciar la descarga.');
+      // La card de análisis deja paso a la card de la descarga en curso
+      items = items.filter(i => i.tipo !== 'analisis' && i.tipo !== 'vacio');
+      activo = 0;
+      ajustarSondeo(true);
+      consultarEstado();
+    } catch (e) {
+      alert(e.message);
+    }
+  }
+
+  async function cancelar(id) {
+    await fetch('/api/cancelar', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id })
+    });
+  }
+
+  async function abrirCarpeta(archivo) {
+    await fetch('/api/abrir-carpeta', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ archivo: archivo || '' })
+    });
+  }
+  $('tbCarpeta').addEventListener('click', () => abrirCarpeta(''));
+  $('tbActualizar').addEventListener('click', () => consultarEstado());
+
+  $('btnPrev').addEventListener('click', () => irA(activo - 1));
+  $('btnNext').addEventListener('click', () => irA(activo + 1));
+  document.addEventListener('keydown', e => {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+    if (e.key === 'ArrowLeft') irA(activo - 1);
+    if (e.key === 'ArrowRight') irA(activo + 1);
+  });
+
+  function irA(i) {
+    if (i < 0 || i >= items.length) return;
+    activo = i;
+    pintar();
+  }
+
+  // ================= Estado (sondeo adaptativo) =================
+  let MS_SONDEO = 5000;
+  function iniciarSondeo() {
+    if (sondeando) return;
+    sondeando = setInterval(consultarEstado, MS_SONDEO);
+  }
+
+  function ajustarSondeo(hayActiva) {
+    const nuevo = hayActiva ? 1000 : 5000;
+    if (nuevo !== MS_SONDEO) {
+      MS_SONDEO = nuevo;
+      if (sondeando) { clearInterval(sondeando); sondeando = setInterval(consultarEstado, MS_SONDEO); }
+    }
+  }
+
+  async function consultarEstado() {
+    let estado;
+    try {
+      const r = await fetch('/api/estado');
+      estado = await r.json();
+    } catch { return; }
+
+    colaIds = estado.cola || [];
+    const historial = estado.historial || [];
+    const sinAnalisis = items.filter(i => i.tipo === 'analisis');
+    items = [...sinAnalisis, ...historial.map(h => ({ tipo: 'descarga', clave: 'h' + h.id, ...h }))];
+    if (!items.length) items = [{ tipo: 'vacio', clave: 'vacio' }];
+    if (activo >= items.length) activo = 0;
+
+    construirCards();
+    pintar();
+
+    const d = estado.activa;
+    ajustarSondeo(!!(d && d.estado === 'descargando'));
+  }
+
+  // ================= Construcción y posición de cards =================
+  function plantillaCard(item) {
+    const clave = item.clave;
+    const el = document.createElement('div');
+    el.className = 'card';
+    el.innerHTML = `
+      <img class="fondo" alt="">
+      <div class="velo"></div>
+      <div class="fila-superior"><span class="chip"></span><span class="contador"></span></div>
+      <div class="contenido"></div>`;
+    el.addEventListener('click', e => {
+      if (e.target.closest('button, select, .opcion')) return;
+      // buscar por clave: los objetos item se recrean en cada sondeo
+      const idx = items.findIndex(i => i.clave === clave);
+      if (idx >= 0 && idx !== activo) irA(idx);
+    });
+    return el;
+  }
+
+  function construirCards() {
+    const claves = new Set(items.map(i => i.clave));
+    // quitar cards que ya no existen
+    for (const [clave, el] of nodos) {
+      if (!claves.has(clave)) { el.remove(); nodos.delete(clave); }
+    }
+    // crear las nuevas (las existentes NO se re-insertan: eso reiniciaría
+    // su animación de entrada y haría parpadear las cards en cada sondeo;
+    // el orden visual lo dan los transforms 3D y el z-index, no el DOM)
+    items.forEach(item => {
+      if (!nodos.has(item.clave)) {
+        const el = plantillaCard(item);
+        nodos.set(item.clave, el);
+        carrusel.appendChild(el);
+      }
+    });
+  }
+
+  function escapar(t) {
+    return String(t ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
+
+  function etiquetaModo(item) {
+    if (item.modo === 'audio') return '🎵 MP3';
+    const h = item.alturaReal || (item.calidad && item.calidad !== 'mejor' ? item.calidad : null);
+    return '🎬 MP4' + (h ? ` · ${h}p${sufijoRes(+h)}` : ' · mejor calidad');
+  }
+
+  function sufijoRes(h) {
+    return { 4320: ' 8K', 2160: ' 4K', 1440: ' 2K', 1080: ' Full HD', 720: ' HD' }[h] || '';
+  }
+
+  // Opciones de calidad con las resoluciones reales del video
+  function opcionesCalidad(item) {
+    const calidades = (item.calidades || []).filter(h => h >= 144);
+    const lista = calidades.length ? calidades : [1080, 720, 480];
+    const mejor = calidades[0] ? ` (${calidades[0]}p${sufijoRes(calidades[0])})` : '';
+    return `<option value="mejor">Mejor calidad posible${mejor}</option>` +
+      lista.map(h => `<option value="${h}">${h}p${sufijoRes(h)}</option>`).join('');
+  }
+
+  // Actualiza el contenido dinámico de cada card y su transformación 3D
+  function pintar() {
+    items.forEach((item, i) => {
+      const el = nodos.get(item.clave);
+      if (!el) return;
+      const off = i - activo;
+      const abs = Math.abs(off);
+
+      // --- transformación 3D tipo coverflow ---
+      let t;
+      if (off === 0) {
+        t = 'translate(-50%, -50%) translateZ(90px)';
+        el.classList.add('activa');
+        el.style.zIndex = 10;
+        el.style.filter = 'none';
+        el.style.opacity = 1;
+        el.style.pointerEvents = 'auto';
+      } else {
+        const lado = off > 0 ? 1 : -1;
+        const x = abs === 1 ? 46 : 74;
+        const esc = abs === 1 ? .8 : .64;
+        t = `translate(-50%, -50%) translateX(${lado * x}%) translateZ(${abs === 1 ? -40 : -140}px) rotateY(${lado * -38}deg) scale(${esc})`;
+        el.classList.remove('activa');
+        el.style.zIndex = abs === 1 ? 5 : 2;
+        el.style.filter = `brightness(${abs === 1 ? .55 : .38})`;
+        el.style.opacity = abs <= 2 ? 1 : 0;
+        el.style.pointerEvents = abs <= 2 ? 'auto' : 'none';
+      }
+      el.style.transform = t;
+
+      // --- contenido según tipo y estado ---
+      const chip = el.querySelector('.chip');
+      const contenido = el.querySelector('.contenido');
+      const fondo = el.querySelector('.fondo');
+      const mini = item.miniatura || '';
+      if (fondo.src !== mini && fondo.getAttribute('src') !== mini) fondo.src = mini;
+
+      el.querySelector('.contador').textContent = `${i + 1} / ${items.length}`;
+
+      if (item.tipo === 'vacio') {
+        chip.textContent = '⌂ Inicio';
+        chip.className = 'chip';
+        contenido.innerHTML = `
+          <div class="titulo">¡Hola! 👋</div>
+          <div class="descripcion">Pega el enlace de un video de YouTube en la barra de arriba y pulsa <b>Analizar</b>.<br><br>
+          Las descargas aparecerán aquí como tarjetas y se guardarán en tu carpeta <b>Descargas</b>.</div>`;
+        return;
+      }
+
+      if (item.tipo === 'analisis') {
+        // se construye una sola vez: no resetear selects/botones mientras el usuario elige
+        if (!el.dataset.construida) {
+          el.dataset.construida = '1';
+          chip.textContent = '✦ Nuevo';
+          chip.className = 'chip nuevo';
+          contenido.innerHTML = `
+            <div class="titulo">${escapar(item.titulo)}</div>
+            <div class="subtitulo">${escapar([item.canal, item.duracion].filter(Boolean).join('  ·  '))}</div>
+            ${item.descripcion ? `<div class="descripcion larga">${escapar(item.descripcion)}</div>` : ''}
+            <div class="selector-formato">
+              <div class="opcion fmt-video activa" data-modo="video">🎬 Video MP4</div>
+              <div class="opcion fmt-audio" data-modo="audio">🎵 Audio MP3</div>
+            </div>
+            <select class="sel-calidad">
+              ${opcionesCalidad(item)}
+            </select>
+            <button class="btn-primario">⬇  Descargar</button>`;
+          contenido.querySelector('.fmt-video').addEventListener('click', () => fijarModo(el, 'video'));
+          contenido.querySelector('.fmt-audio').addEventListener('click', () => fijarModo(el, 'audio'));
+          const sel = contenido.querySelector('.sel-calidad');
+          sel.value = item.calidadElegida || 'mejor';
+          sel.addEventListener('change', e => { item.calidadElegida = e.target.value; });
+          contenido.querySelector('.btn-primario').addEventListener('click', e => { e.stopPropagation(); descargar(item); });
+        }
+        return;
+      }
+
+      // card de descarga (historial): reconstruir solo si cambió algo relevante
+      const posCola = item.estado === 'en_cola' ? colaIds.indexOf(item.id) + 1 : 0;
+      const firma = [item.estado, posCola, Math.round(item.progreso || 0), item.archivoOk ? 1 : 0, item.titulo || '', item.error || '', item.velocidad || '', item.eta || '', item.tamanno || '', item.fase || ''].join('|');
+      if (el.dataset.firma === firma) return;
+      el.dataset.firma = firma;
+
+      const esActivaDescarga = item.estado === 'descargando';
+      chip.className = 'chip ' + item.estado;
+      if (esActivaDescarga) {
+        chip.innerHTML = `<span class="girando"></span> ${Math.round(item.progreso || 0)}%`;
+      } else if (item.estado === 'en_cola') {
+        chip.textContent = posCola === 1 ? '⏳ Siguiente' : `⏳ En cola · #${posCola || '?'}`;
+      } else if (item.estado === 'listo') {
+        chip.textContent = '✓ Listo';
+      } else if (item.estado === 'error') {
+        chip.textContent = '✕ Error';
+      } else if (item.estado === 'cancelado') {
+        chip.textContent = 'Cancelado';
+      } else {
+        chip.textContent = item.estado;
+      }
+
+      let zona = '';
+      if (esActivaDescarga) {
+        const datos = [item.tamanno, item.velocidad, item.eta ? 'Falta ' + item.eta : null].filter(Boolean);
+        zona = `
+          <div class="progreso-zona">
+            <div class="fila-progreso"><span>${item.fase ? escapar(item.fase) : etiquetaModo(item)}</span><b>${Math.round(item.progreso || 0)}%</b></div>
+            ${datos.length ? `<div class="subtitulo">${escapar(datos.join('  ·  '))}</div>` : ''}
+            <div class="barra"><div style="width:${item.progreso || 0}%"></div></div>
+            <button class="btn-vidrio btn-cancelar">✕  Cancelar</button>
+          </div>`;
+      } else if (item.estado === 'en_cola') {
+        zona = `
+          <div class="progreso-zona">
+            <div class="fila-progreso"><span>${etiquetaModo(item)}</span><b>Esperando turno</b></div>
+            <button class="btn-vidrio btn-cancelar">✕  Quitar de la cola</button>
+          </div>`;
+      } else if (item.estado === 'listo') {
+        const btnClips = item.modo === 'video' && item.archivoOk
+          ? `<button class="btn-vidrio btn-clips">✂  Procesar video</button>` : '';
+        zona = `
+          <div class="progreso-zona">
+            <div class="fila-progreso"><span>${etiquetaModo(item)}</span><b>Guardado en Descargas</b></div>
+            <div class="botones-duo">
+              <button class="btn-vidrio btn-abrir" ${item.archivoOk ? '' : 'disabled'}>📂  Abrir carpeta</button>
+              ${btnClips}
+            </div>
+          </div>`;
+      } else if (item.estado === 'error') {
+        zona = `<div class="texto-error">No se pudo descargar: ${escapar(item.error || 'error desconocido')}</div>`;
+      } else if (item.estado === 'cancelado') {
+        zona = `<div class="texto-error">Descarga cancelada.</div>`;
+      }
+
+      contenido.innerHTML = `
+        <div class="titulo">${escapar(item.titulo || 'Descarga #' + item.id)}</div>
+        <div class="subtitulo">${escapar([item.canal, item.duracion].filter(Boolean).join('  ·  '))}</div>
+        ${item.estado === 'listo' && item.descripcion ? `<div class="descripcion">${escapar(item.descripcion)}</div>` : ''}
+        ${zona}`;
+
+      const btnC = contenido.querySelector('.btn-cancelar');
+      if (btnC) btnC.addEventListener('click', e => { e.stopPropagation(); cancelar(item.id); });
+      const btnA = contenido.querySelector('.btn-abrir');
+      if (btnA) btnA.addEventListener('click', e => { e.stopPropagation(); abrirCarpeta(item.archivo || ''); });
+      const btnClip = contenido.querySelector('.btn-clips');
+      if (btnClip) btnClip.addEventListener('click', e => { e.stopPropagation(); abrirModalClips(item); });
+    });
+
+    // --- fondo ambiental con la miniatura activa ---
+    const act = items[activo];
+    const mini = act && act.miniatura;
+    if (mini) $('ambiente').style.backgroundImage = `url("${mini}")`;
+    else $('ambiente').style.backgroundImage = 'none';
+
+    // --- pill inferior ---
+    const PIXEL_TRANSPARENTE = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg"/%3E';
+    if (act && act.tipo !== 'vacio') {
+      $('pillThumb').src = mini || PIXEL_TRANSPARENTE;
+      $('pillTitulo').textContent = act.titulo || 'Video';
+      if (act.tipo === 'descarga' && act.estado === 'descargando') {
+        const partes = act.fase
+          ? [act.fase]
+          : [`${Math.round(act.progreso || 0)}%`, act.velocidad, act.eta ? 'Falta ' + act.eta : null].filter(Boolean);
+        $('pillSubtitulo').textContent = partes.join('  ·  ');
+      } else if (act.tipo === 'descarga' && act.estado === 'en_cola') {
+        const p = colaIds.indexOf(act.id) + 1;
+        $('pillSubtitulo').textContent = `⏳ ${p === 1 ? 'Siguiente en cola' : 'En cola · #' + p}`;
+      } else {
+        $('pillSubtitulo').textContent = [act.canal, act.duracion].filter(Boolean).join('  ·  ')
+          || (act.tipo === 'analisis' ? 'Listo para descargar' : '');
+      }
+    } else {
+      $('pillThumb').src = PIXEL_TRANSPARENTE;
+      $('pillTitulo').textContent = 'Descargas YouTube';
+      $('pillSubtitulo').textContent = 'Pega un enlace para empezar';
+    }
+
+    // --- dots / contador ---
+    const puntos = $('puntos');
+    if (items.length > 1 && items.length <= 12) {
+      puntos.innerHTML = items.map((it, i) => `<span class="punto ${i === activo ? 'actual' : ''}" data-i="${i}"></span>`).join('');
+      puntos.querySelectorAll('.punto').forEach(p => p.addEventListener('click', () => irA(+p.dataset.i)));
+    } else if (items.length > 12) {
+      puntos.innerHTML = `<span class="contador-texto">${activo + 1} / ${items.length}</span>`;
+    } else {
+      puntos.innerHTML = '';
+    }
+  }
+
+  function fijarModo(el, m) {
+    modo = m;
+    el.querySelector('.fmt-video').classList.toggle('activa', m === 'video');
+    el.querySelector('.fmt-audio').classList.toggle('activa', m === 'audio');
+    el.querySelector('.sel-calidad').style.display = m === 'video' ? '' : 'none';
+  }
+
+  // ---- Navegación con rueda del mouse (con freno para no saltar de golpe) ----
+  let ruedaLock = false;
+  document.querySelector('.escenario').addEventListener('wheel', e => {
+    e.preventDefault();
+    if (ruedaLock) return;
+    ruedaLock = true;
+    setTimeout(() => ruedaLock = false, 400);
+    irA(activo + (e.deltaY > 0 ? 1 : -1));
+  }, { passive: false });
+
+  // ---- Navegación arrastrando (mouse y táctil) ----
+  let arrastreX = null, arrastreY = null;
+  document.querySelector('.escenario').addEventListener('pointerdown', e => {
+    if (e.target.closest('button, select, .opcion')) return;
+    arrastreX = e.clientX; arrastreY = e.clientY;
+  });
+  window.addEventListener('pointerup', e => {
+    if (arrastreX === null) return;
+    const dx = e.clientX - arrastreX, dy = e.clientY - arrastreY;
+    arrastreX = null;
+    if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) irA(activo + (dx < 0 ? 1 : -1));
+  });
+
+  // ================= Creador de clips v2 =================
+  let sondeoClips = null;
+  let archivoClips = null; // archivo del video cuyo modal está abierto
+  let bancoTemas = {};     // { id: {nombre, color, activa, ...} }
+  let temaElegido = 'tiktok';
+  // evitan repintar en cada sondeo (el video se destruiría a media carga)
+  let firmaResultados = null, firmaPropuestas = null, formForzado = false;
+
+  const mostrarZona = zona => {
+    for (const z of ['mcForm', 'mcProgreso', 'mcPropuestas', 'mcResultado']) {
+      $(z).style.display = (z === zona) ? 'flex' : 'none';
+    }
+  };
+
+  function pintarTemas() {
+    const grid = $('temasGrid');
+    grid.innerHTML = Object.entries(bancoTemas).map(([id, t]) => `
+      <div class="tema-chip ${id === temaElegido ? 'activa' : ''}" data-tema="${id}"
+           style="--tema-color:#${t.color}; --tema-activa:#${t.activa}; font-family:${t.fuente}">
+        <div class="muestra">A<span>a</span></div>
+        <div class="nombre-tema">${escapar(t.nombre)}</div>
+      </div>`).join('');
+    grid.querySelectorAll('.tema-chip').forEach(ch => {
+      ch.addEventListener('click', () => {
+        temaElegido = ch.dataset.tema;
+        pintarTemas();
+      });
+    });
+  }
+
+  async function cargarTemas() {
+    // siempre fresco: si se agregan temas, aparecen sin recargar la página
+    try {
+      const r = await fetch('/api/clips/temas', { cache: 'no-store' });
+      const d = await r.json();
+      bancoTemas = d.temas || {};
+      if (d.preferido && bancoTemas[d.preferido]) temaElegido = d.preferido;
+      pintarTemas();
+    } catch {}
+  }
+
+  function abrirModalClips(item) {
+    archivoClips = item.archivo;
+    formForzado = false; // al reabrir, mostrar el estado real de ESTE video
+    $('mcVideo').textContent = item.titulo || 'Video';
+    $('modalClips').classList.add('visible');
+    mostrarZona('mcForm');
+    if (sondeando) clearInterval(sondeando), sondeando = null; // el de clips manda aquí
+    iniciarSondeoClips();
+  }
+
+  function cerrarModalClips() {
+    $('modalClips').classList.remove('visible');
+    if (sondeoClips) clearInterval(sondeoClips), sondeoClips = null;
+    sondeoClips = null;
+    iniciarSondeo(); // reanudar el sondeo de descargas
+  }
+
+  $('mcCerrar').addEventListener('click', cerrarModalClips);
+  $('modalClips').addEventListener('click', e => { if (e.target === $('modalClips')) cerrarModalClips(); });
+
+  async function procesar(modo) {
+    const item = items.find(i => i.archivo === archivoClips);
+    if (!item) return;
+    formForzado = false; // se lanzó un proceso nuevo: seguir su estado
+    try {
+      const r = await fetch('/api/clips/procesar', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          archivo: item.archivo, titulo: item.titulo,
+          durClip: Number($('mcDur').value), cantidad: Number($('mcCant').value),
+          modo, tema: temaElegido
+        })
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || 'No se pudo iniciar el proceso.');
+      mostrarZona('mcProgreso');
+      $('mcFase').textContent = modo === 'manual' ? 'Transcribiendo para proponer momentos…' : 'Preparando…';
+    } catch (e) {
+      alert(e.message);
+    }
+  }
+  $('mcAuto').addEventListener('click', () => procesar('auto'));
+  $('mcManual').addEventListener('click', () => procesar('manual'));
+
+  $('mcCancelar').addEventListener('click', async () => {
+    await fetch('/api/clips/cancelar', { method: 'POST' });
+  });
+
+  $('mcRenderizar').addEventListener('click', async () => {
+    const selecciones = [...document.querySelectorAll('.propuesta input:checked')]
+      .map(cb => Number(cb.dataset.inicio));
+    if (!selecciones.length) { alert('Elige al menos un momento.'); return; }
+    try {
+      const r = await fetch('/api/clips/renderizar', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ selecciones })
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || 'No se pudo iniciar el render.');
+      mostrarZona('mcProgreso');
+    } catch (e) {
+      alert(e.message);
+    }
+  });
+
+  $('mcAbrir').addEventListener('click', () => {
+    const t = window.__estadoClips;
+    if (t && t.clips && t.clips.length) abrirCarpeta(t.clips[0].archivo);
+    else abrirCarpeta('');
+  });
+
+  $('mcOtro').addEventListener('click', () => {
+    formForzado = true; // no dejar que el sondeo regrese a los resultados
+    mostrarZona('mcForm');
+  });
+
+  function iniciarSondeoClips() {
+    if (sondeoClips) return;
+    cargarTemas();
+    sondeoClips = setInterval(consultarClips, 1500);
+    consultarClips();
+  }
+
+  async function consultarClips() {
+    let t;
+    try {
+      const r = await fetch('/api/clips/estado');
+      t = (await r.json()).trabajo;
+    } catch { return; }
+    window.__estadoClips = t;
+
+    if (!t) { mostrarZona('mcForm'); formForzado = false; return; }
+
+    // el trabajo global puede pertenecer a OTRO video: para este, no hay nada
+    if (archivoClips && t.archivo !== archivoClips) {
+      if (!formForzado) mostrarZona('mcForm');
+      return;
+    }
+
+    if (t.estado === 'transcribiendo' || t.estado === 'generando') {
+      formForzado = false;
+      mostrarZona('mcProgreso');
+      $('mcFase').textContent = t.fase || 'Procesando…';
+      $('mcPct').textContent = Math.round(t.progreso || 0) + '%';
+      $('mcBarra').style.width = (t.progreso || 0) + '%';
+      return;
+    }
+
+    if (t.estado === 'sugiriendo') {
+      // repintar solo si cambian las propuestas (si no, se perderían
+      // los sliders y casillas mientras el usuario las ajusta)
+      const firma = JSON.stringify(t.propuestas) + '|' + t.cantidad;
+      if (firma !== firmaPropuestas) {
+        firmaPropuestas = firma;
+        $('listaPropuestas').innerHTML = (t.propuestas || []).map((p, i) => `
+          <div class="propuesta" id="prop-${i}">
+            <div class="fila-prop">
+              <input type="checkbox" data-inicio="${p.inicio}" id="chk-${i}" ${i < (t.cantidad || 2) ? 'checked' : ''}>
+              <label class="texto-prop" for="chk-${i}">
+                <b>Momento ${i + 1} · desde ${fmtReloj(p.inicio)}</b>
+                "${escapar(p.texto)}…"
+              </label>
+            </div>
+            <input type="range" min="${Math.max(0, Math.round(p.inicio - 10))}" max="${Math.round(p.inicio + 10)}" step="1" value="${Math.round(p.inicio)}" data-idx="${i}">
+            <div class="marca"><span>inicio del clip</span><span id="marca-${i}">${fmtReloj(p.inicio)}</span></div>
+          </div>`).join('');
+        $('listaPropuestas').querySelectorAll('input[type="range"]').forEach(sl => {
+          sl.addEventListener('input', () => {
+            const i = sl.dataset.idx;
+            const chk = $('chk-' + i);
+            chk.dataset.inicio = sl.value;
+            $('marca-' + i).textContent = fmtReloj(Number(sl.value));
+            $('prop-' + i).classList.add('elegida');
+          });
+        });
+        $('listaPropuestas').querySelectorAll('input[type="checkbox"]').forEach(cb => {
+          cb.addEventListener('change', () => {
+            cb.closest('.propuesta').classList.toggle('elegida', cb.checked);
+          });
+        });
+      }
+      if (!formForzado) mostrarZona('mcPropuestas');
+      return;
+    }
+
+    if (t.estado === 'error') {
+      formForzado = false;
+      mostrarZona('mcProgreso');
+      $('mcFase').innerHTML = '<span class="texto-error-mc">❌ ' + escapar(t.error || 'Error desconocido') + '</span>';
+      $('mcPct').textContent = '';
+      $('mcBarra').style.width = '0%';
+      $('mcCancelar').textContent = 'Volver';
+      $('mcCancelar').onclick = () => { mostrarZona('mcForm'); $('mcCancelar').textContent = '✕  Cancelar proceso'; $('mcCancelar').onclick = null; };
+      return;
+    }
+
+    if (t.estado === 'listo') {
+      // si el usuario pidió el formulario ("Generar otros clips"), respetarlo
+      if (formForzado) { mostrarZona('mcForm'); return; }
+      // repintar solo si cambiaron los clips: recrear el <video> en cada
+      // sondeo hacía que nunca terminara de cargar (spinner eterno)
+      const firma = JSON.stringify(t.clips);
+      if (firma !== firmaResultados) {
+        firmaResultados = firma;
+        $('mcLista').innerHTML = (t.clips || []).map((c, i) => `
+          <div class="clip-resultado">
+            <video controls preload="metadata" src="/api/archivo?ruta=${encodeURIComponent(c.archivo)}"></video>
+            <div class="titulos">
+              ${(c.titulos || []).map(ti => `
+                <div class="titulo-sug"><span>${escapar(ti)}</span>
+                  <button class="btn-copiar" data-copy="${escapar(ti)}">📋</button>
+                </div>`).join('')}
+              <div class="titulo-sug"><span class="hashtags">${escapar((c.hashtags || []).join(' '))}</span>
+                <button class="btn-copiar" data-copy="${escapar((c.hashtags || []).join(' '))}">📋</button>
+              </div>
+            </div>
+            <div class="subtitulo">clip_${i + 1}.mp4 · desde ${fmtReloj(c.inicio)}</div>
+          </div>`).join('');
+        $('mcLista').querySelectorAll('.btn-copiar').forEach(b => {
+          b.addEventListener('click', () => {
+            navigator.clipboard.writeText(b.dataset.copy).then(() => {
+              b.textContent = '✓';
+              setTimeout(() => b.textContent = '📋', 1200);
+            }).catch(() => {});
+          });
+        });
+      }
+      mostrarZona('mcResultado');
+    }
+  }
+
+  function fmtReloj(seg) {
+    const m = Math.floor(seg / 60), s = Math.round(seg % 60);
+    return `${m}:${String(s).padStart(2, '0')}`;
+  }
+
+  // ---- Fondos de la app: uno al azar en cada carga y rota cada 90 s ----
+  let fondos = [];
+  let fondoActual = -1;
+  let capaFondo = 0; // 0 = A visible, 1 = B visible
+
+  async function cargarFondos() {
+    try {
+      const r = await fetch('/api/fondos');
+      fondos = await r.json();
+    } catch { fondos = []; }
+    if (fondos.length) rotarFondo();
+  }
+
+  function rotarFondo() {
+    if (!fondos.length) return;
+    let i;
+    do { i = Math.floor(Math.random() * fondos.length); } while (i === fondoActual && fondos.length > 1);
+    fondoActual = i;
+    const url = 'fondos/' + encodeURIComponent(fondos[i]);
+    // fundido cruzado: la capa entrante solo se muestra cuando la imagen ya cargó
+    const entrante = capaFondo ? $('fondoA') : $('fondoB');
+    const saliente = capaFondo ? $('fondoB') : $('fondoA');
+    const img = new Image();
+    img.onload = () => {
+      entrante.style.backgroundImage = `url("${url}")`;
+      entrante.classList.add('visible');
+      saliente.classList.remove('visible');
+      capaFondo = 1 - capaFondo;
+    };
+    img.src = url;
+  }
+
+  setInterval(rotarFondo, 90000);
+  cargarFondos();
+
+  // Arranque: cargar historial persistido y sondear
+  consultarEstado();
+  iniciarSondeo();
+</script>
+</body>
+</html>
