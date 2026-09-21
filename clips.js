@@ -486,8 +486,23 @@ async function renderizarInternamente(id, momentos) {
         await renderClip(id, archivo, seg.inicio, dur, ass, salida, i / momentos.length * 100, 100 / momentos.length, i + 1, momentos.length);
         if (!esActiva(id)) return;
         const sugerencias = sugerirTitulos(delSeg);
-        clips.push({ archivo: salida, inicio: seg.inicio, texto: delSeg.slice(0, 8).map(w => w.texto).join(' ').slice(0, 120), ...sugerencias });
+        const nuevo = { archivo: salida, inicio: seg.inicio, texto: delSeg.slice(0, 8).map(w => w.texto).join(' ').slice(0, 120), ...sugerencias };
+        clips.push(nuevo);
         aplicar(id, { clips: [...clips] });
+        // metadatos junto al clip: otras apps (p.ej. el Publicador Social)
+        // leen este JSON para autopublicar con títulos y hashtags
+        try {
+          fs.writeFileSync(salida.replace(/\.mp4$/i, '.json'), JSON.stringify({
+            archivo: salida,
+            video: trabajo.titulo,
+            tema: trabajo.tema,
+            inicio: seg.inicio,
+            titulos: nuevo.titulos,
+            hashtags: nuevo.hashtags,
+            texto: nuevo.texto,
+            fecha: new Date().toISOString()
+          }, null, 2));
+        } catch {}
       }
     aplicar(id, { estado: 'listo', fase: null, progreso: 100 });
     console.log(`[clips ${id}] Listo: ${clips.length} clips`);
